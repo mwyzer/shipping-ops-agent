@@ -1,0 +1,6 @@
+[
+  {"finding_id": "F001", "decision": "approve", "reviewer": "budi", "note": ""},
+  {"finding_id": "F002", "decision": "ask_pol", "reviewer": "budi", "note": "Konfirmasi ke CS dulu"},
+  {"finding_id": "F003", "decision": "reject", "reviewer": "budi", "note": "Nomor manifest sudah benar sesuai EIR"},
+  {"finding_id": "F004", "decision": "ask_pol", "reviewer": "budi", "note": ""}
+]
