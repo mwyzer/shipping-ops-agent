@@ -275,6 +275,7 @@ class EmailAgent(Agent):
                    "report": str(self.write_review_excel(out_dir / f"triase_email_{ts}.xlsx", result, decisions))}
         if written:
             import shutil
+            outputs["drafts_dir"] = str(drafts)
             outputs["drafts_zip"] = shutil.make_archive(str(drafts), "zip", drafts)
         return outputs
 

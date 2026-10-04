@@ -20,9 +20,12 @@ from fastapi.responses import FileResponse, HTMLResponse
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from .agents.base import DecisionOption, Kpi, ReviewDecision, ReviewItem
+from .agents.base import DecisionOption, Kpi, ReviewDecision, ReviewItem, append_sent_log, read_sent_ids
 from .agents.registry import AGENTS
+from .config import imap_config, smtp_config
 from .graph import build_graph
+from .imap_client import append_fetched_ids, fetch_new_messages, read_fetched_ids
+from .mailer import send_eml
 
 WEB_DIR = Path(__file__).parent / "web"
 ALLOWED_SUFFIXES = {".xlsx", ".xls", ".csv", ".txt", ".eml"}
@@ -43,6 +46,10 @@ class DecisionsIn(BaseModel):
 
 class DemoIn(BaseModel):
     agent: str = "reconciliation"
+
+
+class FetchInboxIn(BaseModel):
+    label: str = "Inbox IMAP"
 
 
 # ------------------------------------------------------------ responses ---
@@ -88,7 +95,14 @@ class RunView(BaseModel):
     options: list[DecisionOption]
     decisions: list[ReviewDecision]
     files: list[str]
+    sent: list[str]
     log: list[str]
+
+
+class SendResult(BaseModel):
+    sent: list[str]
+    failed: list[str]
+    skipped: list[str]
 
 
 def _safe_name(name: str) -> str:
@@ -120,6 +134,7 @@ def create_app(work_dir: Path | str = "output/web") -> FastAPI:
         agent = AGENTS.get(result.get("agent") or v.get("route") or "")
         status = ("awaiting_review" if interrupts else "done" if v.get("outputs")
                   else "answered" if v.get("answer") else "error")
+        sent = sorted(read_sent_ids(Path(v["output_dir"]))) if status == "done" and v.get("output_dir") else []
         return {
             "run_id": run_id, **runs[run_id], "status": status,
             "route": v.get("route"), "route_reason": v.get("route_reason"), "answer": v.get("answer"),
@@ -130,6 +145,7 @@ def create_app(work_dir: Path | str = "output/web") -> FastAPI:
             "options": [o.model_dump() for o in agent.decision_options] if agent else [],
             "decisions": v.get("decisions", []),
             "files": sorted(Path(p).name for p in (v.get("outputs") or {}).values()),
+            "sent": sent,
             "log": v.get("log", []),
         }
 
@@ -199,6 +215,26 @@ def create_app(work_dir: Path | str = "output/web") -> FastAPI:
             (folder / name).write_bytes(content)
         return _start(run_id, request, folder, _safe_name(label), agent or None)
 
+    @app.post("/api/runs/fetch-inbox", response_model=RunView)
+    def fetch_inbox(body: FetchInboxIn = FetchInboxIn()) -> dict:
+        cfg = imap_config()
+        if cfg is None:
+            raise HTTPException(422, "IMAP belum dikonfigurasi di server")
+        try:
+            messages = fetch_new_messages(cfg, read_fetched_ids(work))
+        except Exception as exc:
+            raise HTTPException(502, f"Gagal mengambil inbox: {exc}") from exc
+        if not messages:
+            raise HTTPException(422, "Tidak ada email baru di inbox")
+        run_id = uuid.uuid4().hex[:12]
+        folder = work / run_id / "data" / "inbox"
+        folder.mkdir(parents=True, exist_ok=True)
+        for i, (_, raw) in enumerate(messages, start=1):
+            (folder / f"mail_{i:03d}.eml").write_bytes(raw)
+        view = _start(run_id, f"{len(messages)} email baru dari inbox", folder, _safe_name(body.label), "email")
+        append_fetched_ids(work, [message_id for message_id, _ in messages])
+        return view
+
     @app.post("/api/ask", response_model=RunView)
     def ask(request: str = Form(...)) -> dict:
         """Coordinator only, no files: shows which agent would handle the request."""
@@ -228,6 +264,39 @@ def create_app(work_dir: Path | str = "output/web") -> FastAPI:
                                       "reviewer": body.reviewer.strip(), "note": d.note} for d in body.decisions]),
                      _config(run_id))
         return _view(run_id)
+
+    @app.post("/api/runs/{run_id}/send", response_model=SendResult)
+    def send_emails(run_id: str) -> dict:
+        view = _view(run_id)
+        if view["status"] != "done":
+            raise HTTPException(409, "Run belum selesai direview")
+        if view["agent"] != "email":
+            raise HTTPException(409, "Pengiriman hanya tersedia untuk Agent Email")
+        cfg = smtp_config()
+        if cfg is None:
+            raise HTTPException(422, "SMTP belum dikonfigurasi di server")
+        values = graph.get_state(_config(run_id)).values or {}
+        drafts_dir = (values.get("outputs") or {}).get("drafts_dir")
+        if not drafts_dir or not Path(drafts_dir).is_dir():
+            raise HTTPException(422, "Tidak ada draft untuk dikirim")
+        out_dir = Path(values["output_dir"])
+        already = read_sent_ids(out_dir)
+        sent, failed, skipped, log_entries = [], [], [], []
+        for path in sorted(Path(drafts_dir).glob("*.eml")):
+            item_id = path.stem.split("_", 1)[0]
+            if item_id in already:
+                skipped.append(item_id)
+                continue
+            try:
+                send_eml(path, cfg)
+                sent.append(item_id)
+                log_entries.append({"item_id": item_id, "status": "sent"})
+            except Exception as exc:
+                failed.append(item_id)
+                log_entries.append({"item_id": item_id, "status": "failed", "error": str(exc)})
+        if log_entries:
+            append_sent_log(out_dir, log_entries)
+        return {"sent": sent, "failed": failed, "skipped": skipped}
 
     @app.get("/api/runs/{run_id}/files/{name}")
     def download(run_id: str, name: str) -> FileResponse:

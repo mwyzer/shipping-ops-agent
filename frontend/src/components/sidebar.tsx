@@ -72,6 +72,15 @@ export function Sidebar() {
       </section>
 
       <section>
+        <h2>Agent Email: inbox nyata</h2>
+        <p className="notes">Ambil email baru dari mailbox ops via IMAP, lalu pilah seperti biasa.</p>
+        <button className="btn block" type="button" disabled={busy !== null}
+          onClick={() => start("fetch-inbox", () => api.fetchInbox())}>
+          {busy === "fetch-inbox" ? "Mengambil…" : "Ambil Email Baru (IMAP)"}
+        </button>
+      </section>
+
+      <section>
         <h2>Unggah file sendiri</h2>
         <form onSubmit={onUpload}>
           <label className="field" htmlFor="request">Apa yang perlu dikerjakan?</label>

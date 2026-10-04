@@ -73,6 +73,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/fetch-inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fetch Inbox */
+        post: operations["fetch_inbox_api_runs_fetch_inbox_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ask": {
         parameters: {
             query?: never;
@@ -121,6 +138,23 @@ export interface paths {
         put?: never;
         /** Submit Decisions */
         post: operations["submit_decisions_api_runs__run_id__decisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Emails */
+        post: operations["send_emails_api_runs__run_id__send_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -229,6 +263,14 @@ export interface components {
              * @default reconciliation
              */
             agent: string;
+        };
+        /** FetchInboxIn */
+        FetchInboxIn: {
+            /**
+             * Label
+             * @default Inbox IMAP
+             */
+            label: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -375,8 +417,19 @@ export interface components {
             decisions: components["schemas"]["ReviewDecision"][];
             /** Files */
             files: string[];
+            /** Sent */
+            sent: string[];
             /** Log */
             log: string[];
+        };
+        /** SendResult */
+        SendResult: {
+            /** Sent */
+            sent: string[];
+            /** Failed */
+            failed: string[];
+            /** Skipped */
+            skipped: string[];
         };
         /**
          * Severity
@@ -533,6 +586,39 @@ export interface operations {
             };
         };
     };
+    fetch_inbox_api_runs_fetch_inbox_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FetchInboxIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ask_api_ask_post: {
         parameters: {
             query?: never;
@@ -619,6 +705,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_emails_api_runs__run_id__send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendResult"];
                 };
             };
             /** @description Validation Error */

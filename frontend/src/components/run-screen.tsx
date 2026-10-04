@@ -22,6 +22,7 @@ export function RunScreen({ id }: { id: string }) {
   const [group, setGroup] = useState("");
   const [query, setQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const draftKey = `draft:${id}`;
 
   const load = useCallback((r: RunView) => {
@@ -89,6 +90,26 @@ export function RunScreen({ id }: { id: string }) {
     }
   }
 
+  async function sendEmails() {
+    if (!run) return;
+    if (!window.confirm("Kirim semua draft balasan/NOA yang sudah disetujui pada run ini?")) return;
+    setSendingEmail(true);
+    try {
+      const res = await api.sendEmails(run.run_id);
+      load(await api.run(run.run_id));
+      const parts = [
+        res.sent.length ? `${res.sent.length} terkirim` : "",
+        res.skipped.length ? `${res.skipped.length} sudah terkirim sebelumnya` : "",
+        res.failed.length ? `${res.failed.length} gagal` : "",
+      ].filter(Boolean);
+      toast(parts.length ? parts.join(", ") + "." : "Tidak ada draft baru untuk dikirim.");
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setSendingEmail(false);
+    }
+  }
+
   return (
     <>
       <RunHeader run={run} />
@@ -105,7 +126,7 @@ export function RunScreen({ id }: { id: string }) {
         </div>
       </div>
 
-      {run.status === "done" && <ResultCard run={run} />}
+      {run.status === "done" && <ResultCard run={run} onSend={sendEmails} sending={sendingEmail} />}
 
       <div className="card">
         <div className="toolbar">

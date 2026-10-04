@@ -16,6 +16,7 @@ export type Severity = Schemas["Severity"];
 export type DecisionOption = Schemas["DecisionOption"];
 export type Kpi = Schemas["Kpi"];
 export type DecisionIn = Schemas["DecisionIn"];
+export type SendResult = Schemas["SendResult"];
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -51,6 +52,7 @@ export const api = {
   runs: () => request<RunListItem[]>("/api/runs"),
   run: (id: string) => request<RunView>(`/api/runs/${encodeURIComponent(id)}`),
   demo: (agent: string) => request<RunView>("/api/runs/demo", json({ agent })),
+  fetchInbox: (label?: string) => request<RunView>("/api/runs/fetch-inbox", json({ label: label || "Inbox IMAP" })),
   ask: (text: string) => {
     const fd = new FormData();
     fd.append("request", text);
@@ -66,5 +68,6 @@ export const api = {
   },
   decide: (id: string, reviewer: string, decisions: DecisionIn[]) =>
     request<RunView>(`/api/runs/${encodeURIComponent(id)}/decisions`, json({ reviewer, decisions })),
+  sendEmails: (id: string) => request<SendResult>(`/api/runs/${encodeURIComponent(id)}/send`, json({})),
   fileUrl: (id: string, name: string) => `/api/runs/${encodeURIComponent(id)}/files/${encodeURIComponent(name)}`,
 };

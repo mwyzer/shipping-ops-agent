@@ -146,6 +146,46 @@
         }
       }
     },
+    "/api/runs/fetch-inbox": {
+      "post": {
+        "summary": "Fetch Inbox",
+        "operationId": "fetch_inbox_api_runs_fetch_inbox_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FetchInboxIn",
+                "default": {
+                  "label": "Inbox IMAP"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ask": {
       "post": {
         "summary": "Ask",
@@ -256,6 +296,45 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RunView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/send": {
+      "post": {
+        "summary": "Send Emails",
+        "operationId": "send_emails_api_runs__run_id__send_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResult"
                 }
               }
             }
@@ -489,6 +568,17 @@
         },
         "type": "object",
         "title": "DemoIn"
+      },
+      "FetchInboxIn": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": "Inbox IMAP"
+          }
+        },
+        "type": "object",
+        "title": "FetchInboxIn"
       },
       "HTTPValidationError": {
         "properties": {
@@ -865,6 +955,13 @@
             "type": "array",
             "title": "Files"
           },
+          "sent": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sent"
+          },
           "log": {
             "items": {
               "type": "string"
@@ -894,9 +991,42 @@
           "options",
           "decisions",
           "files",
+          "sent",
           "log"
         ],
         "title": "RunView"
+      },
+      "SendResult": {
+        "properties": {
+          "sent": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sent"
+          },
+          "failed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Failed"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sent",
+          "failed",
+          "skipped"
+        ],
+        "title": "SendResult"
       },
       "Severity": {
         "type": "string",

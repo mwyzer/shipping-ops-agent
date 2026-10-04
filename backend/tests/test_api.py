@@ -1,3 +1,5 @@
+from email.message import EmailMessage
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -105,3 +107,129 @@ def test_run_list_is_newest_first(client):
     runs = client.get("/api/runs").json()
     assert [r["run_id"] for r in runs[:2]] == [second["run_id"], first["run_id"]]
     assert runs[0]["agent"] == "pricing"
+
+
+class _FakeSmtp:
+    """Stands in for smtplib.SMTP so /send can be exercised without a real network."""
+    sent: list = []
+
+    def __init__(self, host, port, timeout=None):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def starttls(self):
+        pass
+
+    def login(self, user, password):
+        pass
+
+    def send_message(self, msg):
+        _FakeSmtp.sent.append(msg)
+
+
+@pytest.fixture()
+def smtp_env(monkeypatch):
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_USER", "ops@yourline.example")
+    monkeypatch.setenv("SMTP_PASSWORD", "secret")
+    monkeypatch.setattr("shipping_agent.mailer.smtplib.SMTP", _FakeSmtp)
+    _FakeSmtp.sent = []
+    return _FakeSmtp
+
+
+def test_send_requires_smtp_config(client, monkeypatch):
+    for var in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"):
+        monkeypatch.delenv(var, raising=False)
+    run = demo(client, "email")
+    client.post(f"/api/runs/{run['run_id']}/decisions", json=all_decisions(run))
+    assert client.post(f"/api/runs/{run['run_id']}/send").status_code == 422
+
+
+def test_send_requires_email_agent(client, smtp_env):
+    run = demo(client, "reconciliation")
+    client.post(f"/api/runs/{run['run_id']}/decisions", json=all_decisions(run))
+    assert client.post(f"/api/runs/{run['run_id']}/send").status_code == 409
+
+
+def test_send_approved_drafts_and_is_idempotent(client, smtp_env):
+    run = demo(client, "email")
+    done = client.post(f"/api/runs/{run['run_id']}/decisions", json=all_decisions(run)).json()
+    assert any(n.startswith("draft_email_") and n.endswith(".zip") for n in done["files"])
+
+    first = client.post(f"/api/runs/{run['run_id']}/send").json()
+    assert first["sent"] and not first["failed"]
+    assert len(smtp_env.sent) == len(first["sent"])
+
+    second = client.post(f"/api/runs/{run['run_id']}/send").json()
+    assert second["sent"] == [] and set(second["skipped"]) == set(first["sent"])
+    assert len(smtp_env.sent) == len(first["sent"])  # nothing re-sent
+
+    view = client.get(f"/api/runs/{run['run_id']}").json()
+    assert set(view["sent"]) == set(first["sent"])
+
+
+class _FakeImap:
+    """Stands in for imaplib.IMAP4_SSL so /fetch-inbox can be exercised without a real network."""
+    messages: dict = {}
+
+    def __init__(self, host, port):
+        pass
+
+    def login(self, user, password):
+        return "OK", [b"LOGIN completed"]
+
+    def select(self, folder, readonly=False):
+        return "OK", [b"1"]
+
+    def search(self, charset, *criteria):
+        return "OK", [b" ".join(sorted(_FakeImap.messages))]
+
+    def fetch(self, num, parts):
+        raw = _FakeImap.messages.get(num)
+        if raw is None:
+            return "NO", [None]
+        return "OK", [(b"%s (RFC822 {%d}" % (num, len(raw)), raw)]
+
+    def logout(self):
+        return "BYE", [b"logout"]
+
+
+def _eml_bytes(message_id, subject):
+    msg = EmailMessage()
+    msg["Message-ID"], msg["Subject"] = message_id, subject
+    msg["From"], msg["To"] = "customer@example.com", "ops@yourline.example"
+    msg.set_content("Mohon info jadwal kapal.")
+    return bytes(msg)
+
+
+@pytest.fixture()
+def imap_env(monkeypatch):
+    monkeypatch.setenv("IMAP_HOST", "imap.example.com")
+    monkeypatch.setenv("IMAP_USER", "ops@yourline.example")
+    monkeypatch.setenv("IMAP_PASSWORD", "secret")
+    monkeypatch.setattr("shipping_agent.imap_client.imaplib.IMAP4_SSL", _FakeImap)
+    _FakeImap.messages = {
+        b"1": _eml_bytes("<a@example.com>", "Jadwal kapal minggu ini"),
+        b"2": _eml_bytes("<b@example.com>", "Request booking 2x20GP"),
+    }
+    return _FakeImap
+
+
+def test_fetch_inbox_requires_imap_config(client, monkeypatch):
+    for var in ("IMAP_HOST", "IMAP_USER", "IMAP_PASSWORD"):
+        monkeypatch.delenv(var, raising=False)
+    assert client.post("/api/runs/fetch-inbox", json={}).status_code == 422
+
+
+def test_fetch_inbox_creates_email_run_and_dedupes(client, imap_env):
+    run = client.post("/api/runs/fetch-inbox", json={}).json()
+    assert run["agent"] == "email" and run["status"] == "awaiting_review"
+    assert len(run["items"]) >= 1
+
+    again = client.post("/api/runs/fetch-inbox", json={})
+    assert again.status_code == 422  # same two messages, already fetched above

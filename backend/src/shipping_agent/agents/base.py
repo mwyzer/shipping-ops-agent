@@ -155,6 +155,30 @@ def append_audit(out_dir: Path, agent: str, title: str, decisions: list[ReviewDe
     return path
 
 
+def append_sent_log(out_dir: Path, entries: list[dict[str, Any]]) -> Path:
+    """Record one send attempt per item: {item_id, to, subject, status: sent|failed, error?}."""
+    path = out_dir / "sent_log.jsonl"
+    with path.open("a", encoding="utf-8") as fh:
+        for e in entries:
+            fh.write(json.dumps({"ts": datetime.now(timezone.utc).isoformat(), **e}, ensure_ascii=False) + "\n")
+    return path
+
+
+def read_sent_ids(out_dir: Path) -> set[str]:
+    """Item ids that already have a successful send recorded in sent_log.jsonl."""
+    path = out_dir / "sent_log.jsonl"
+    if not path.is_file():
+        return set()
+    sent = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if row.get("status") == "sent":
+            sent.add(row["item_id"])
+    return sent
+
+
 def read_any(path: Path) -> pd.DataFrame:
     if path.suffix.lower() in {".xlsx", ".xls"}:
         return pd.read_excel(path, dtype=str)

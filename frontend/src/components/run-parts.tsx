@@ -81,7 +81,8 @@ export function StepLog({ log }: { log: string[] }) {
   );
 }
 
-export function ResultCard({ run }: { run: RunView }) {
+export function ResultCard({ run, onSend, sending }: { run: RunView; onSend?: () => void; sending?: boolean }) {
+  const canSend = run.agent === "email" && run.files.some((f) => f.startsWith("draft_email_") && f.endsWith(".zip"));
   return (
     <div className="card">
       <h3>Hasil review</h3>
@@ -95,6 +96,14 @@ export function ResultCard({ run }: { run: RunView }) {
           </a>
         ))}
       </div>
+      {canSend && onSend && (
+        <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
+          <button className="btn primary" type="button" disabled={sending} onClick={onSend}>
+            {sending ? "Mengirim…" : "Kirim Email"}
+          </button>
+          {(run.sent?.length ?? 0) > 0 && <span className="sub">{run.sent!.length} draft sudah terkirim sebelumnya.</span>}
+        </div>
+      )}
       <StepLog log={run.log} />
     </div>
   );
